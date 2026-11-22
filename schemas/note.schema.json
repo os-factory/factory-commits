@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://os-factory.dev/factory-commits/schemas/v0.1/note.schema.json",
+  "title": "Factory Commits note document v0.1 (content of a note in refs/notes/factory)",
+  "type": "object",
+  "required": ["type", "attestations"],
+  "properties": {
+    "type": { "const": "https://os-factory.dev/factory-commits/note/v0.1" },
+    "attestations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["predicateType", "digest", "envelope"],
+        "properties": {
+          "predicateType": { "type": "string", "format": "uri" },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "envelope": { "$ref": "#/$defs/dsseEnvelope" }
+        }
+      }
+    },
+    "summary": { "type": "object" }
+  },
+  "$defs": {
+    "dsseEnvelope": {
+      "type": "object",
+      "required": ["payloadType", "payload", "signatures"],
+      "properties": {
+        "payloadType": { "type": "string", "minLength": 1 },
+        "payload": { "type": "string", "contentEncoding": "base64" },
+        "signatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sig"],
+            "properties": {
+              "keyid": { "type": "string" },
+              "sig": { "type": "string", "minLength": 1 },
+              "scheme": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

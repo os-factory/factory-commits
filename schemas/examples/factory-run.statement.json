@@ -1,0 +1,27 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "git+https://github.com/acme/app",
+      "digest": { "gitTree": "b1e2c3d4e5f60718293a4b5c6d7e8f9012345678" }
+    }
+  ],
+  "predicateType": "https://os-factory.dev/factory-commits/factory-run/v0.1",
+  "predicate": {
+    "run": { "id": "01JD4X7Q", "startedOn": "2026-11-19T09:12:03Z", "finishedOn": "2026-11-19T09:18:55Z" },
+    "workUnit": { "id": "416", "source": "github", "attemptId": "att_01JD4X7Q" },
+    "policy": { "id": "default", "version": "3", "required": ["typecheck", "build", "unit", "lint"] },
+    "stages": [
+      { "id": "typecheck", "kind": "verify", "addedBy": "policy", "status": "passed", "durationMs": 14210 },
+      { "id": "build", "kind": "build", "addedBy": "policy", "status": "passed", "durationMs": 40112 },
+      { "id": "unit", "kind": "test", "addedBy": "policy", "status": "passed", "durationMs": 61002 },
+      { "id": "lint", "kind": "verify", "addedBy": "policy", "status": "passed", "durationMs": 9870 },
+      { "id": "perf-budget", "kind": "verify", "addedBy": "agent", "status": "passed", "durationMs": 9120 }
+    ],
+    "verdict": "pass",
+    "producer": { "name": "har", "version": "2.0.0" },
+    "agent": { "name": "claude-code", "version": "2.1" },
+    "environment": { "trust": "local", "executor": "local" },
+    "telemetry": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
+  }
+}
