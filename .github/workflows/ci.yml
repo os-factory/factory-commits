@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  factory-proof:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/factory-proof
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: packages/factory-proof/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Conformance (factory-proof)
+        working-directory: .
+        run: conformance/run.sh packages/factory-proof/dist/cli.js
+
+  sh-verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: git --version && jq --version && command -v ssh-keygen
+      - name: Conformance (sh verifier, /bin/sh is dash)
+        run: conformance/run.sh verifiers/sh/git-factory-verify
