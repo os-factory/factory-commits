@@ -1,0 +1,158 @@
+#!/bin/sh
+# git-factory-verify: a minimal Factory Commits v0.1 verifier (SPEC §9).
+# usage: git-factory-verify [-C <repo>] verify [<rev>] [--json] [--allowed-signers <file>]
+# Needs: git, jq, base64, sha256sum or shasum; ssh-keygen for signatures.
+set -u
+export LC_ALL=C
+repo=. rev=HEAD json=0 signers="" cmd=""
+die() { echo "git-factory-verify: $*" >&2; exit 2; }
+while [ $# -gt 0 ]; do
+  case $1 in
+    -C) [ $# -ge 2 ] || die "-C needs a path"; repo=$2; shift ;;
+    verify) cmd=verify ;;
+    --json) json=1 ;;
+    --allowed-signers) [ $# -ge 2 ] || die "--allowed-signers needs a file"; signers=$2; shift ;;
+    -*) die "unknown option: $1" ;;
+    *) [ "$cmd" = verify ] || die "unknown command: $1"; rev=$1 ;;
+  esac
+  shift
+done
+[ "$cmd" = verify ] || die "usage: git-factory-verify [-C <repo>] verify [<rev>] [--json] [--allowed-signers <file>]"
+for t in git jq base64; do command -v "$t" >/dev/null 2>&1 || die "missing tool: $t"; done
+if [ -n "$signers" ]; then
+  [ -f "$signers" ] || die "allowed signers file not found: $signers"
+  case $signers in /*) ;; *) signers=$(pwd)/$signers ;; esac
+  command -v ssh-keygen >/dev/null 2>&1 || die "missing tool: ssh-keygen"
+fi
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+g() { git -C "$repo" "$@"; }
+g rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository: $repo"
+commit=$(g rev-parse --verify --quiet "$rev^{commit}") || die "unknown revision: $rev"
+tree=$(g rev-parse "$commit^{tree}")
+tmp=$(mktemp -d) || die "mktemp failed"
+trap 'rm -rf "$tmp"' EXIT
+: > "$tmp/problems"
+prob() { printf '%s\t%s\n' "$1" "$2" >> "$tmp/problems"; }
+b64ok() { grep -Eq '^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$'; }
+level=none linked=0 recorded=0 signed=0
+PT=https://os-factory.dev/factory-commits/factory-run/v0.1
+TOK='[^[:space:];]+'
+
+# 1. Trailers (SPEC §3).
+g log -1 --format='%(trailers:only=true,unfold=true)' "$commit" > "$tmp/trailers"
+: > "$tmp/claimed"
+while IFS= read -r line; do
+  case $line in *:*) ;; *) continue ;; esac
+  key=$(printf '%s' "${line%%:*}" | tr 'A-Z' 'a-z')
+  val=$(printf '%s' "${line#*:}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  case $key in
+    work-unit) re="^([^[:space:];:]+|[a-z0-9][a-z0-9-]*:$TOK)\$" ;;
+    factory-run) re="^$TOK(; trace=[0-9a-f]{32})?\$" ;;
+    factory-policy) re='^[^[:space:];@]+(@[^[:space:];]+)?$' ;;
+    factory-agent) re='^[^[:space:];/]+(/[^[:space:];]+)?(; model=[^[:space:];]+)?$' ;;
+    factory-attestation) re='^sha256:[0-9a-f]{64}$' ;;
+    *) continue ;;
+  esac
+  if ! printf '%s\n' "$val" | grep -Eq "$re"; then prob TRAILER_MALFORMED "$key: \"$val\" does not match its grammar"; continue; fi
+  case $key in work-unit|factory-run) linked=1 ;; factory-attestation) echo "$val" >> "$tmp/claimed" ;; esac
+done < "$tmp/trailers"
+[ $linked = 1 ] && level=L0
+
+# 2-3. The note and its attestations.
+: > "$tmp/digests"
+if g notes --ref=refs/notes/factory show "$commit" > "$tmp/note" 2>/dev/null; then
+  if ! jq empty "$tmp/note" >/dev/null 2>&1; then
+    prob NOTE_INVALID_JSON "the note is not valid JSON"
+  elif ! jq -e '.type == "https://os-factory.dev/factory-commits/note/v0.1" and (.attestations | type == "array")
+      and all(.attestations[]; type == "object" and (.predicateType | type == "string")
+        and (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+        and (.envelope | type == "object" and (.payloadType | type == "string") and (.payload | type == "string")
+          and (.signatures | type == "array") and all(.signatures[]; .sig | type == "string" and length > 0)))' \
+      "$tmp/note" >/dev/null 2>&1; then
+    prob NOTE_SCHEMA "the note does not match the note schema"
+  else
+    jq -r '.attestations[].digest' "$tmp/note" > "$tmp/digests"
+    n=$(jq '.attestations | length' "$tmp/note")
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      a=".attestations[$i]"; i=$((i + 1))
+      digest=$(jq -r "$a.digest" "$tmp/note"); id=$(printf '%s' "$digest" | cut -c1-19)
+      jq -r "$a.envelope.payload" "$tmp/note" > "$tmp/b64"
+      if ! b64ok < "$tmp/b64" || ! base64 -d < "$tmp/b64" > "$tmp/payload" 2>/dev/null; then
+        prob STATEMENT_INVALID "$id: payload is not valid base64"; continue
+      fi
+      actual="sha256:$(sha256 < "$tmp/payload")"
+      [ "$actual" = "$digest" ] || { prob DIGEST_MISMATCH "$id: payload digest is $actual"; continue; }
+      ptype=$(jq -r "$a.envelope.payloadType" "$tmp/note")
+      [ "$ptype" = application/vnd.in-toto+json ] || { prob STATEMENT_INVALID "$id: payloadType is $ptype"; continue; }
+      if ! jq -e 'type == "object" and (.predicateType | type == "string")' "$tmp/payload" >/dev/null 2>&1; then
+        prob STATEMENT_INVALID "$id: payload is not a statement"; continue
+      fi
+      st_type=$(jq -r .predicateType "$tmp/payload")
+      [ "$st_type" = "$PT" ] || { prob PREDICATE_UNKNOWN "$id: predicate type $st_type is not recognized"; continue; }
+      # Required-field subset of statement.schema.json and the predicate schema (see README).
+      if ! jq -e 'def tok: type == "string" and test("^[^\\s;]+$"); def hex: type == "string" and test("^([0-9a-f]{40}|[0-9a-f]{64})$");
+          ._type == "https://in-toto.io/Statement/v1" and (.subject | type == "array" and length == 1)
+          and (.subject[0].name | type == "string" and startswith("git+")) and (.subject[0].digest.gitTree | hex)
+          and (.subject[0].digest.gitCommit | . == null or hex) and (.predicate | type == "object")
+          and (.predicate.run.id | tok) and (.predicate.policy.required | type == "array" and all(.[]; tok))
+          and (.predicate.stages | type == "array" and all(.[]; (.id | tok) and (.status | IN("passed", "failed", "error", "skipped"))))
+          and (.predicate.verdict | IN("pass", "fail")) and (.predicate.producer.name | tok)
+          and (.predicate.producer.version | type == "string" and length > 0) and (.predicate.environment.trust | IN("local", "ci"))' \
+          "$tmp/payload" >/dev/null 2>&1; then
+        prob STATEMENT_INVALID "$id: statement fails the schema"; continue
+      fi
+      st_tree=$(jq -r '.subject[0].digest.gitTree' "$tmp/payload")
+      [ "$st_tree" = "$tree" ] || { prob TREE_MISMATCH "$id: statement tree $st_tree is not the commit tree $tree"; continue; }
+      st_commit=$(jq -r '.subject[0].digest.gitCommit // empty' "$tmp/payload")
+      [ -z "$st_commit" ] || [ "$st_commit" = "$commit" ] || { prob COMMIT_MISMATCH "$id: statement commit $st_commit is not $commit"; continue; }
+      verdict=$(jq -r '.predicate.verdict' "$tmp/payload")
+      recomputed=$(jq -r '.predicate as $p | if all($p.policy.required[]; . as $r | any($p.stages[]; .id == $r and .status == "passed")) then "pass" else "fail" end' "$tmp/payload")
+      [ "$verdict" = "$recomputed" ] || { prob VERDICT_MISMATCH "$id: recorded verdict $verdict, recomputed $recomputed"; continue; }
+      [ "$verdict" = pass ] && recorded=1
+      [ -n "$signers" ] || continue
+      # 5. ssh signatures over the PAE (SPEC §5.3).
+      { printf 'DSSEv1 %s %s %s ' "${#ptype}" "$ptype" "$(wc -c < "$tmp/payload" | tr -d ' ')"; cat "$tmp/payload"; } > "$tmp/pae"
+      m=$(jq "$a.envelope.signatures | length" "$tmp/note"); j=0
+      while [ "$j" -lt "$m" ]; do
+        s="$a.envelope.signatures[$j]"; j=$((j + 1))
+        keyid=$(jq -r "$s.keyid // empty" "$tmp/note"); scheme=$(jq -r "$s.scheme // \"ssh\"" "$tmp/note")
+        jq -r "$s.sig" "$tmp/note" > "$tmp/sig"
+        if ! grep -q '^-----BEGIN SSH SIGNATURE-----' "$tmp/sig"; then
+          { b64ok < "$tmp/sig" && base64 -d < "$tmp/sig" > "$tmp/sig.dec" 2>/dev/null && mv "$tmp/sig.dec" "$tmp/sig"; } || :
+        fi
+        result=unverified
+        if [ "$scheme" = ssh ] && [ -n "$keyid" ] && grep -q '^-----BEGIN SSH SIGNATURE-----' "$tmp/sig"; then
+          if ssh-keygen -Y verify -n factory-commits -f "$signers" -I "$keyid" -s "$tmp/sig" < "$tmp/pae" >/dev/null 2>&1; then
+            result=valid
+          elif [ -n "$(ssh-keygen -Y find-principals -f "$signers" -s "$tmp/sig" 2>/dev/null)" ]; then
+            result=invalid
+          fi
+        fi
+        case $result in
+          valid) [ "$verdict" = pass ] && signed=1 ;;
+          invalid) prob SIGNATURE_INVALID "$id: signature by $keyid is invalid" ;;
+          *) prob SIGNATURE_UNVERIFIED "$id: signature by ${keyid:-unknown} cannot be checked against the allowed signers" ;;
+        esac
+      done
+    done
+  fi
+fi
+[ $recorded = 1 ] && level=L1
+[ $signed = 1 ] && level=L2
+
+# 6. Factory-Attestation trailers must name an attestation in the note.
+while IFS= read -r d; do
+  grep -qx "$d" "$tmp/digests" || prob TRAILER_ATTESTATION_NOT_FOUND "Factory-Attestation $(printf '%s' "$d" | cut -c1-19) is not in the note"
+done < "$tmp/claimed"
+
+if [ $json = 1 ]; then
+  jq -Rnc --arg c "$commit" --arg l "$level" \
+    '{ commits: [{ commit: $c, level: $l, problems: [inputs | split("\t") | { code: .[0], message: .[1] }] }] }' < "$tmp/problems"
+else
+  printf '%s %s\n' "$(printf '%s' "$commit" | cut -c1-12)" "$level"
+  sed 's/^/  /; s/\t/: /' "$tmp/problems"
+fi
+case $level in L1|L2|L3) ;; *) exit 1 ;; esac
+grep -Eqv '^(PREDICATE_UNKNOWN|SIGNATURE_UNVERIFIED)	' "$tmp/problems" && exit 1
+exit 0

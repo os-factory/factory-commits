@@ -71,6 +71,7 @@ Builders use only `sh`, `git`, `jq` and `ssh-keygen` through [`test-vectors/lib.
 ```sh
 (cd packages/factory-proof && npm ci && npm run build)
 conformance/run.sh packages/factory-proof/dist/cli.js
+conformance/run.sh verifiers/sh/git-factory-verify
 ```
 
 Adding a case: create `test-vectors/cases/<name>/build.sh` and `expected.json`, then make every implementation pass.
