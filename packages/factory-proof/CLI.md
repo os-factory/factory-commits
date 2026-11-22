@@ -87,10 +87,10 @@ Adds trailers in place using `git interpret-trailers`. It validates each value a
 ## `git factory setup`
 
 ```
-git factory setup [--remote origin] [--json]
+git factory setup [--remote origin] [--undo] [--json]
 ```
 
-Idempotently adds `+refs/notes/factory:refs/notes/factory` to the remote's fetch refspecs and sets `notes.rewriteRef refs/notes/factory`. `--undo` removes both.
+Idempotently adds `+refs/notes/factory:refs/notes/factory` to the remote's fetch refspecs and sets `notes.rewriteRef refs/notes/factory`. `--undo` removes both. `--json` output: `{ "remote", "fetchRefspec": true|false|null, "rewriteRef": bool, "changed": bool }` (`fetchRefspec` is `null` when the remote doesn't exist).
 
 ## `git factory digest`
 
