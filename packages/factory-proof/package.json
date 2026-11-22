@@ -31,7 +31,7 @@
   ],
   "scripts": {
     "schemas": "node scripts/copy-schemas.mjs",
-    "build": "npm run schemas && tsc -p tsconfig.build.json",
+    "build": "npm run schemas && tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "npm run schemas && tsc -p tsconfig.json --noEmit",
     "test": "npm run build && vitest run",
     "prepack": "npm run build"
