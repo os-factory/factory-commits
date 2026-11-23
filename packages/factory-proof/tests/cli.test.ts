@@ -27,8 +27,9 @@ function noteOf(d: string, rev = "HEAD"): { attestations: Array<{ digest: string
 }
 
 describe("git factory --version", () => {
-  it("prints the contract version", () => {
-    expect(cli(tempDir(), ["--version"]).stdout).toBe("factory-proof 0.1.0 (factory-commits v0.1)\n");
+  it("prints the package and contract versions", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(cli(tempDir(), ["--version"]).stdout).toBe(`factory-proof ${pkg.version} (factory-commits v0.1)\n`);
   });
 });
 
