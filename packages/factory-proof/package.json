@@ -1,6 +1,6 @@
 {
   "name": "@osfactory/factory-proof",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reference implementation of Factory Commits v0.1: a small library and the `git factory` command.",
   "keywords": [
     "factory-commits",
