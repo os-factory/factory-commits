@@ -1,0 +1,222 @@
+name: Release
+
+# Cut a semver release of @osfactory/factory-proof from Conventional Commit / squash-merge titles
+# on main (or a prerelease on next), then publish the package to npm with npm
+# Trusted Publishing and provenance. Modeled on os-factory/otel-hook's and
+# os-factory/har's Release workflows. See RELEASING.md.
+#
+# Only packages/factory-proof is versioned and published. Tags are
+# `factory-proof-vX.Y.Z`; the spec is versioned separately.
+
+on:
+  push:
+    branches: [main, next]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Analyze commits and print the next release without publishing
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/factory-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/factory-proof/package-lock.json
+
+      - name: Install, typecheck, test, build
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Conformance (factory-proof)
+        working-directory: .
+        run: conformance/run.sh packages/factory-proof/dist/cli.js
+
+      - name: Conformance (sh verifier)
+        working-directory: .
+        run: conformance/run.sh verifiers/sh/git-factory-verify
+
+      - name: Pack dry run
+        run: npm pack --dry-run
+
+  release:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    # Default GITHUB_TOKEN permissions only. The release GitHub App token
+    # (below) pushes the release commit and tag: the `main` ruleset requires
+    # pull requests, and that App is a bypass actor of the ruleset.
+    permissions:
+      contents: read
+    outputs:
+      released: ${{ steps.detect.outputs.released }}
+      tag: ${{ steps.detect.outputs.tag }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - name: Create release GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          # Client ID: repository variable (vars.RELEASE_APP_CLIENT_ID) or
+          # npm-publish environment secret (secrets.RELEASE_APP_CLIENT_ID).
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID || secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Contents write: @semantic-release/git push, tag, GitHub Release.
+          permission-contents: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Configure git as the release App bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          USER_ID="$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)"
+          git config --global user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config --global user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+          gh auth setup-git
+
+      - name: Record release tags before release
+        id: before
+        run: |
+          git tag -l 'factory-proof-v*' | sort > "$RUNNER_TEMP/tags-before"
+          if [ -s "$RUNNER_TEMP/tags-before" ]; then
+            echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
+          else
+            # Without a factory-proof-v* tag semantic-release would cut 1.0.0.
+            # 0.1.0 is published by hand once; see RELEASING.md.
+            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No factory-proof-v* tag yet. Publish 0.1.0 and push the factory-proof-v0.1.0 tag (RELEASING.md); skipping the release."
+          fi
+
+      # Release tooling only (semantic-release and plugins); not the package.
+      - run: npm ci
+
+      - name: Semantic release (version cut + GitHub Release; npm publish follows)
+        # No npm credential: semantic-release only cuts the version here
+        # (`npmPublish: false` in release.config.cjs); publish-npm publishes.
+        if: steps.before.outputs.bootstrapped == 'true' || inputs.dry_run
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npx semantic-release --dry-run
+          else
+            npx semantic-release
+          fi
+
+      - name: Detect published release
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git tag -l 'factory-proof-v*' | sort > "$RUNNER_TEMP/tags-after"
+          TAG="$(comm -13 "$RUNNER_TEMP/tags-before" "$RUNNER_TEMP/tags-after" | tail -n 1)"
+
+          if [ -n "$TAG" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#factory-proof-v}" >> "$GITHUB_OUTPUT"
+            echo "Released $TAG"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "No new release"
+          fi
+
+  publish-npm:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: packages/factory-proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      # npm Trusted Publishing: `id-token: write` lets npm exchange this job's
+      # GitHub OIDC identity for a short-lived publish credential, so no npm
+      # token is stored or can expire. Needs npm >= 11.5.1 (Node 24) and a
+      # trusted publisher on npmjs.com for @osfactory/factory-proof (repo
+      # os-factory/factory-commits, workflow release.yml, environment npm-publish).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/factory-proof/package-lock.json
+          registry-url: https://registry.npmjs.org
+
+      - name: Build, pack, SBOM, publish
+        run: |
+          EXPECTED="${{ needs.release.outputs.version }}"
+          ACTUAL="$(node -p "require('./package.json').version")"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "package.json version ($ACTUAL) does not match tag factory-proof-v${EXPECTED}" >&2
+            exit 1
+          fi
+          case "$EXPECTED" in
+            *-*) DIST_TAG=next ;;
+            *) DIST_TAG=latest ;;
+          esac
+          npm ci
+          npm run build
+          OUT="$GITHUB_WORKSPACE/release-artifacts"
+          mkdir -p "$OUT"
+          npm sbom --sbom-format cyclonedx > "$OUT/sbom.cdx.json"
+          npm sbom --sbom-format spdx > "$OUT/sbom.spdx.json"
+          npm pack --pack-destination "$OUT"
+          # Publish the exact tarball that is attested and attached below.
+          npm publish "$OUT/osfactory-factory-proof-${EXPECTED}.tgz" --access public --provenance --tag "$DIST_TAG"
+          echo "Published @osfactory/factory-proof@${EXPECTED} to npm (dist-tag ${DIST_TAG})"
+
+      - name: Attest build provenance (GitHub)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: "release-artifacts/*.tgz"
+
+      - name: Upload release artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.release.outputs.tag }}"
+          gh release upload "$TAG" "$GITHUB_WORKSPACE"/release-artifacts/* --clobber
