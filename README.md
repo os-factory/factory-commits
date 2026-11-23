@@ -11,6 +11,7 @@ Factory Commits is an open convention for recording, in git itself, how each cha
 | Path | What |
 |---|---|
 | [`SPEC.md`](SPEC.md) | The core specification |
+| [`RATIONALE.md`](RATIONALE.md) | Why it looks this way: what is reused, what is new, and how it relates to SLSA, in-toto and other neighbors |
 | [`schemas/`](schemas/) | JSON Schemas for the `factory-run` predicate and the note document |
 | [`profiles/telemetry.md`](profiles/telemetry.md) | How OpenTelemetry data correlates with proofs |
 | [`test-vectors/`](test-vectors/) · [`conformance/`](conformance/) | Repositories with known answers, and a runner any implementation can use |
