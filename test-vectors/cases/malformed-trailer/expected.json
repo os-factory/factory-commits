@@ -1,0 +1,1 @@
+{ "HEAD": { "level": "L0", "problems": ["TRAILER_MALFORMED"] }, "only-malformed": { "level": "none", "problems": ["TRAILER_MALFORMED"] } }
