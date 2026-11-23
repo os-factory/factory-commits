@@ -24,6 +24,9 @@ module.exports = {
         // `!` breaking marker (`feat!: …`) cuts a major.
         preset: "conventionalcommits",
         releaseRules: [
+          // Until 1.0, a breaking change bumps the minor version (0.1.0 -> 0.2.0),
+          // not 1.0.0: GOVERNANCE.md sets the conditions for 1.0. Remove at 1.0.
+          { breaking: true, release: "minor" },
           // Spec, shell verifier, CI and docs changes never release the package.
           { scope: "spec", release: false },
           { scope: "sh", release: false },

@@ -5,7 +5,7 @@ Factory Commits is a draft open convention started by the [os-factory](https://g
 ## Until 1.0
 
 - **Maintainers** are listed in [MAINTAINERS.md](MAINTAINERS.md). They merge changes and cut releases.
-- **Spec changes** go through an RFC (see [RFCS.md](RFCS.md)): a pull request that edits `SPEC.md`, the schemas or a profile, with the reasoning in the description. It stays open at least 7 days for comment before it merges.
+- **Spec changes** go through an RFC (see [RFCS.md](RFCS.md)): a pull request that edits `SPEC.md`, the schemas or a profile, with the reasoning in the description. It stays open at least 24 hours for comment before it merges, and follows the compatibility rules in [RFCS.md](RFCS.md#compatibility).
 - **Breaking changes** are allowed in 0.x releases and are listed in [CHANGELOG.md](CHANGELOG.md).
 - **Decisions** are made by maintainer consensus in the open (issues, pull requests, Discussions).
 
