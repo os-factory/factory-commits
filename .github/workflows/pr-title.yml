@@ -35,3 +35,30 @@ jobs:
           subjectPatternError: |
             The subject "{subject}" must not start with an uppercase letter.
             Example: "feat: add --json to git factory verify"
+
+  schema-release:
+    # The schemas ship inside @osfactory/factory-proof and decide what it
+    # accepts. A PR that changes them must release the package; otherwise the
+    # next unrelated release ships the change silently. See RFCS.md.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a releasing title when schemas change
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          changed=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+            | grep -E '^schemas/[^/]+\.schema\.json$' || true)
+          if [ -z "$changed" ]; then echo "No schema change."; exit 0; fi
+          echo "Schemas changed:"; echo "$changed"
+          type=$(printf '%s' "$TITLE" | sed -nE 's/^([a-z]+)(\([^)]*\))?!?: .*/\1/p')
+          scope=$(printf '%s' "$TITLE" | sed -nE 's/^[a-z]+\(([^)]*)\)!?: .*/\1/p')
+          case "$type" in feat|fix|perf) ;; *)
+            echo "::error::Schemas changed, so the title must release the package: use feat, fix or perf (with ! if breaking)."; exit 1;;
+          esac
+          case "$scope" in spec|sh|ci|docs)
+            echo "::error::Schemas changed, but scope '$scope' never releases the package. Drop the scope or use another."; exit 1;;
+          esac
+          echo "OK: '$TITLE' releases the package."

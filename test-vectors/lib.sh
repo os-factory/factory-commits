@@ -47,7 +47,7 @@ fc_predicate() {
     ],
     verdict: "pass",
     producer: { name: "test-vectors", version: "0.1" },
-    environment: { trust: "local", executor: "local" }
+    environment: { trust: "self-reported", executor: "local" }
   }' | jq -c "${1:-.}"
 }
 

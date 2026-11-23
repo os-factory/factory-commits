@@ -21,7 +21,7 @@
     "verdict": "pass",
     "producer": { "name": "har", "version": "2.0.0" },
     "agent": { "name": "claude-code", "version": "2.1" },
-    "environment": { "trust": "local", "executor": "local" },
+    "environment": { "trust": "self-reported", "executor": "local" },
     "telemetry": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
   }
 }

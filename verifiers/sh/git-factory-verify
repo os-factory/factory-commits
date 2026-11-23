@@ -98,7 +98,7 @@ if g notes --ref=refs/notes/factory show "$commit" > "$tmp/note" 2>/dev/null; th
           and (.predicate.run.id | tok) and (.predicate.policy.required | type == "array" and all(.[]; tok))
           and (.predicate.stages | type == "array" and all(.[]; (.id | tok) and (.status | IN("passed", "failed", "error", "skipped"))))
           and (.predicate.verdict | IN("pass", "fail")) and (.predicate.producer.name | tok)
-          and (.predicate.producer.version | type == "string" and length > 0) and (.predicate.environment.trust | IN("local", "ci"))' \
+          and (.predicate.producer.version | type == "string" and length > 0) and (.predicate.environment.trust | IN("self-reported", "independent"))' \
           "$tmp/payload" >/dev/null 2>&1; then
         prob STATEMENT_INVALID "$id: statement fails the schema"; continue
       fi

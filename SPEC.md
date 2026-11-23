@@ -24,7 +24,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are to be interpreted a
 
 1. **The tree is the subject.** A statement names the git tree it verified. Squash, rebase and amend often keep the tree, so the proof survives them. The commit is bound by where the note is attached.
 2. **Proof attaches after the commit.** A statement about commit X cannot live inside X, because its content would change X's id. Proof lives in git notes.
-3. **A trailer is a claim; a signature is proof.** Trailers are written by the author or agent and are untrusted on their own.
+3. **A trailer is a claim; a signature is accountability.** Trailers are written by the author or agent and are untrusted on their own. A signature proves that a statement was not changed after signing and who vouches for it. It does not prove that the stages ran (§11.1).
 4. **Git holds the ledger, not the data.** Statements and summaries go in git. Logs, screenshots and traces stay elsewhere, referenced by digest.
 5. **Reuse before invent.** Only the `factory-run` predicate, the trailer names and the note layout are new.
 
@@ -92,7 +92,7 @@ Schema: [`schemas/factory-run.predicate.schema.json`](schemas/factory-run.predic
 | `verdict` | MUST | `pass` or `fail` (§4.3) |
 | `producer.name`, `producer.version` | MUST | The tool that built the statement, e.g. `har` / `2.0.0` |
 | `agent.name`, `agent.version`, `agent.model` | MAY | The coding agent that made the change |
-| `environment.trust` | MUST | `local` (a developer or agent machine) or `ci` (a runner the agent does not control) |
+| `environment.trust` | MUST | `self-reported` (the agent that made the change could have altered the run or the statement, e.g. on a developer machine) or `independent` (the run and its signing key are out of that agent's reach). Producers MUST write `self-reported` unless both conditions hold. The field is written by the producer, so it is a claim, not evidence (§11.1) |
 | `environment.executor` | MAY | e.g. `local`, `github-actions` |
 | `telemetry.traceId`, `telemetry.spanId` | MAY | OTel ids of the run span ([telemetry profile](profiles/telemetry.md)) |
 
@@ -182,6 +182,8 @@ Only the gate (§8) SHOULD push `refs/notes/factory` to a shared remote. Local p
 | **L2** | Signed | L1, and that envelope has at least one signature valid for a trusted signer |
 | **L3** | Gated | L2, and a statement from a trusted gate binds the merged commit (see [extensions/merge-gate.md](extensions/merge-gate.md)) |
 
+L2 means a trusted signer vouches for the statement. For a `self-reported` statement it does not prove that the stages ran (§11.1).
+
 Levels are reported per commit. A repository's level for a range is the lowest level of its commits. L1 does not require L0 (trailers are optional). Problems are reported alongside the level and do not change it; a verifier fails a commit that has problems or is below the required level.
 
 ## 9. Verification procedure
@@ -206,6 +208,38 @@ A repository audit is this procedure over `git rev-list` of a range.
 ## 10. Conformance
 
 An implementation conforms to v0.1 when it produces the expected results for every case in [`test-vectors/`](test-vectors/), run with [`conformance/`](conformance/). Producers MUST emit statements and notes that validate against the schemas. Verifiers MUST report the same level and problem codes as the test vectors.
+
+## 11. Limitations
+
+This section is informative. It describes what v0.1 does not guarantee and the mitigations a team may adopt. None of them is required.
+
+### 11.1 Self-reported proofs
+
+Most statements are produced on the developer's machine, where the coding agent usually runs as the developer, with no sandbox. Such an agent can read any key the developer can and run any producer, so it can write and sign a statement for stages that never ran, or change a result before it is signed. v0.1 does not prevent this.
+
+A signature on a `self-reported` statement still proves two things: the statement was not changed after signing, and the signer vouches for it. The signer is accountable for the proof, as the author is for a signed commit and for the code their agent wrote.
+
+Possible mitigations:
+
+- **Touch-to-sign key.** A hardware-backed ssh key that needs a physical touch for each signature (for example `ed25519-sk`). `ssh-keygen -Y sign` already supports these keys, so §5.3 is unchanged. An agent cannot touch the key.
+- **Spot checks.** A runner the agent does not control re-runs the required stages on a random sample of trees that have `self-reported` proofs and compares the verdicts. A mismatch is evidence of a false proof.
+- **Independent runner.** A runner the agent does not control produces `independent` statements, signed with a key kept apart from developer keys. Because `environment.trust` is written by the producer, a verifier that requires `independent` must also check that the signer is one of the independent signers. A later version may standardize that check.
+
+### 11.2 The merged tree may be untested
+
+When the base branch moves after a run, the commit that lands has a tree no run verified. A gate MUST NOT reuse a proof for a different tree ([extensions/merge-gate.md](extensions/merge-gate.md)), so the merged commit stays below L1.
+
+Possible mitigations:
+
+- **Up-to-date branches.** Require the branch to be up to date before merging. The producer re-runs on the rebased tree, and a squash or rebase merge then lands that exact tree.
+- **Merge queue.** A queue builds the commit that will land, and a producer verifies it before it lands.
+- **Gate re-run.** The gate re-runs the required stages on the merged tree.
+
+### 11.3 Test quality
+
+A statement records that the required stages ran on a tree and passed. It does not say whether those stages check the right things. The agent that made a change may also have written or weakened its tests. Judging test quality is out of scope.
+
+A team that wants that judgment can add a stage for it, such as a `review` stage run by a reviewing agent or a person, and list it in `policy.required`. It is then recorded and enforced like any other stage.
 
 ## Appendix: telemetry
 
