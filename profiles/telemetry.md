@@ -8,7 +8,7 @@ The key words MUST, SHOULD and MAY are used as in [RFC 2119](https://www.rfc-edi
 
 1. **Reuse OpenTelemetry semantic conventions first.** `vcs.*`, `cicd.*` and `gen_ai.*` names are used wherever they exist. `factory.*` names cover only what OTel has no name for yet; they are candidates for upstream proposals.
 2. **The correlation keys are the ones in the proof.** A work unit id, run id and tree hash in telemetry are byte-for-byte the values in the commit trailers and the `factory-run` statement ([SPEC.md](../SPEC.md)).
-3. **No content.** Attributes in this profile never carry prompts, transcripts, file contents, secrets or absolute local paths.
+3. **No content.** Attributes in this profile never carry prompts, transcripts, file contents or secrets. Absolute local paths appear only under the local-only `factory.local.*` namespace ([Local-only attributes](#local-only-attributes-factorylocal)), which never leaves the machine.
 
 ## Correlation keys
 
@@ -23,6 +23,7 @@ The key words MUST, SHOULD and MAY are used as in [RFC 2119](https://www.rfc-edi
 | Attestation | `factory.attestation.digest` | `Factory-Attestation` trailer, note `attestations[].digest` |
 | Repository | `vcs.repository.url.full` | statement `subject[].name` (without the `git+` prefix) |
 | Branch | `vcs.ref.head.name` | — |
+| Agent session | `session.id` | — |
 
 ## Resource attributes (agent sessions)
 
@@ -30,6 +31,8 @@ A producer that launches or wraps a coding agent (a harness, a hook adapter) SHO
 
 | Attribute | Requirement | Notes |
 |---|---|---|
+| `session.id` | SHOULD | The session correlation key: one value for everything one agent session emits ([OTel session conventions](https://opentelemetry.io/docs/specs/semconv/general/session/)). A harness that launches the agent sets its own key here |
+| `factory.slot.id` | MAY | The harness slot (isolated workspace) the session runs in, e.g. `1` |
 | `factory.work_unit.id` | SHOULD, when a work unit is bound | |
 | `factory.work_unit.source` | MAY | Tracker name, e.g. `github`, `linear`, `jira` |
 | `factory.attempt.id` | SHOULD, when known | |
@@ -37,6 +40,8 @@ A producer that launches or wraps a coding agent (a harness, a hook adapter) SHO
 | `vcs.ref.head.name` | SHOULD | |
 | `factory.producer.name` | SHOULD | The harness or tool that set these, e.g. `har` |
 | `factory.producer.version` | SHOULD | |
+
+On the Resource, `session.id` names the session the producer launched. A record MAY carry its own `session.id` attribute, for example the coding agent's own session id. A consumer correlating with the producer's session reads the Resource value.
 
 Span-level `gen_ai.*` attributes (model, tokens, agent name, conversation id) follow the [OTel GenAI conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) unchanged.
 
@@ -83,6 +88,15 @@ The work unit and attempt attributes from the Resource table above apply to veri
 
 The `factory-run` predicate MAY carry `telemetry.traceId` (and `telemetry.spanId`) of the run span. The `Factory-Run` trailer MAY carry `trace=<traceId>`. A verifier never needs telemetry. Telemetry is for interpretation, the proof is for trust.
 
-## Deprecation of producer-specific names
+## Local-only attributes (`factory.local.*`)
 
-Producers that already emit their own names (for example `har.work_unit_id`) SHOULD emit both for at least one major version and document the removal.
+`factory.local.*` holds absolute paths and other machine-local facts that a local consumer (for example a dashboard on the same machine) needs to attribute telemetry to a checkout or workspace, such as `factory.local.checkout_path` and `factory.local.work_dir`.
+
+- Attributes in this namespace MUST NOT be exported to third parties by default.
+- A forwarder (a local collector, a relay, a proxy) MUST strip every `factory.local.*` key, at every level that carries attributes, from each copy it sends off the machine, unless the operator explicitly opted in for that destination.
+- A forwarder MUST strip by prefix, not by a list of known keys, so a key added later is stripped too.
+- Values in this namespace are never correlation keys: nothing in a proof refers to them.
+
+## Producer-specific names
+
+Producers SHOULD use this profile's names for everything the profile names. A producer's own namespace (for example `har.*`) is only for data that has no name in this profile or in the OpenTelemetry semantic conventions.
