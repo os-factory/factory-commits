@@ -1,10 +1,12 @@
-// Copies the repository's JSON Schemas (the single source of truth) into the package.
+// Copies the repository's JSON Schemas (the single source of truth) and its
+// LICENSE into the package, so both ship in the npm tarball.
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const pkg = join(dirname(fileURLToPath(import.meta.url)), "..");
-const src = join(pkg, "..", "..", "schemas");
+const repo = join(pkg, "..", "..");
+const src = join(repo, "schemas");
 const dest = join(pkg, "schemas");
 
 if (!existsSync(src)) {
@@ -17,3 +19,4 @@ mkdirSync(dest, { recursive: true });
 for (const f of readdirSync(src)) {
   if (f.endsWith(".schema.json")) copyFileSync(join(src, f), join(dest, f));
 }
+copyFileSync(join(repo, "LICENSE"), join(pkg, "LICENSE"));

@@ -6,19 +6,25 @@ Reference implementation of [Factory Commits v0.1](../../SPEC.md): a small TypeS
 - Pure and local: no network calls, no telemetry. Runtime dependencies: `ajv` and `ajv-formats`. External tools: `git`, and `ssh-keygen` for signatures.
 - Node.js 20 or later.
 
-## Install (local, not published to npm)
+## Install
 
-From a checkout of this repository:
+```sh
+npm install -g @osfactory/factory-proof
+git factory --version     # factory-proof <version> (factory-commits v0.1)
+```
+
+From a checkout of this repository instead:
 
 ```sh
 cd packages/factory-proof
 npm ci
 npm run build
 npm install -g .          # links the git-factory executable; or: npm link
-git factory --version     # factory-proof 0.1.0 (factory-commits v0.1)
 ```
 
 `npm install -g .` links to the checkout, so keep it (and rebuild after pulling). For a copy that does not depend on the checkout, install a tarball instead: `npm install -g "$(npm pack --silent)"`.
+
+Releases are described in [RELEASING.md](../../RELEASING.md) and listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick start
 

@@ -2,13 +2,32 @@
   "name": "@osfactory/factory-proof",
   "version": "0.1.0",
   "description": "Reference implementation of Factory Commits v0.1: a small library and the `git factory` command.",
+  "keywords": [
+    "factory-commits",
+    "git",
+    "provenance",
+    "attestation",
+    "in-toto",
+    "dsse",
+    "ssh-signature",
+    "git-notes",
+    "supply-chain",
+    "coding-agents"
+  ],
+  "author": "OS Factory",
   "license": "Apache-2.0",
   "type": "module",
-  "private": true,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/os-factory/factory-commits.git",
     "directory": "packages/factory-proof"
+  },
+  "homepage": "https://github.com/os-factory/factory-commits/tree/main/packages/factory-proof#readme",
+  "bugs": {
+    "url": "https://github.com/os-factory/factory-commits/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=20"
@@ -27,11 +46,12 @@
     "dist",
     "schemas",
     "CLI.md",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "schemas": "node scripts/copy-schemas.mjs",
-    "build": "npm run schemas && tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && npm run schemas && tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "typecheck": "npm run schemas && tsc -p tsconfig.json --noEmit",
     "test": "npm run build && vitest run",
     "prepack": "npm run build"
