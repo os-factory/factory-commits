@@ -44,6 +44,8 @@ Trailers are standard [git trailers](https://git-scm.com/docs/git-interpret-trai
 - `<id>`, `<run-id>`, `<policy-id>`, `<name>` and `<model>` contain no whitespace and no `;`.
 - `Factory-Attestation` is the statement digest (§5.2) of a statement whose subject tree equals the commit's tree.
 - A commit MAY carry several `Work-Unit` trailers. It SHOULD carry at most one of each other trailer.
+- Trailer names are matched case-insensitively, as git does. Values are parsed strictly as written above (`; trace=` with one space).
+- In `Factory-Agent`, `<name>` ends at the first `/`. In `Factory-Policy`, `<policy-id>` ends at the first `@`. In `Work-Unit`, the `<id>` after the source MAY contain `:`.
 
 ## 4. The `factory-run` predicate
 
@@ -65,7 +67,7 @@ Schema: [`schemas/factory-run.predicate.schema.json`](schemas/factory-run.predic
 - `subject` MUST contain exactly one entry.
 - `subject[0].digest.gitTree` is REQUIRED: the tree hash the run verified.
 - `subject[0].digest.gitCommit` is OPTIONAL. Producers that build the statement before the commit exists omit it.
-- `subject[0].name` SHOULD be `git+<repository URL>` with credentials removed. When there is no remote, it MUST be `git+local`.
+- `subject[0].name` SHOULD be `git+<repository URL>` with credentials removed. When there is no remote, or the remote is a filesystem path or `file://` URL, it MUST be `git+local` (a local path would violate §6). An scp-style remote `user@host:path` is written `ssh://host/path`.
 
 ### 4.2 Predicate fields
 
@@ -116,9 +118,14 @@ Producers MUST NOT re-serialize a payload after computing its digest. Verifiers 
 
 v0.1 defines one signature scheme that needs nothing beyond git's own tooling:
 
-- **`ssh`:** `sig` is the armored output of `ssh-keygen -Y sign -n factory-commits -f <key>` over the DSSE pre-authentication encoding (PAE) of the envelope; `keyid` is the signer principal. Verify with `ssh-keygen -Y verify -n factory-commits -I <principal> -f <allowed_signers>` over the same PAE bytes.
+- **`ssh`:** `sig` is the base64 encoding of the armored output of `ssh-keygen -Y sign -n factory-commits -f <key>` over the DSSE pre-authentication encoding (PAE) of the envelope; `keyid` is the signer principal. Verify with `ssh-keygen -Y verify -n factory-commits -I <principal> -f <allowed_signers>` over the same PAE bytes.
 
-Other schemes (Sigstore keyless for CI) are extensions. A verifier MUST report a signature it cannot check as unverified, never as valid.
+Other schemes (Sigstore keyless for CI) are extensions. When the verifier is given trusted signers:
+
+- a signature whose key is not among the trusted signers, or whose scheme it cannot check, is reported as **unverified** (`SIGNATURE_UNVERIFIED`, informational), never as valid;
+- a signature from a trusted key that fails verification is **invalid** (`SIGNATURE_INVALID`).
+
+Without trusted signers, signatures are not checked and nothing is reported about them.
 
 ## 6. Privacy
 
@@ -132,7 +139,7 @@ History is permanent and often public.
 
 ### 7.1 Ref and placement
 
-Proofs live in the notes ref **`refs/notes/factory`**. The note attached to a commit holds every envelope that applies to that commit. A note MUST be attached only to a commit whose tree equals the `gitTree` of each statement it contains, except for merge statements (§8).
+Proofs live in the notes ref **`refs/notes/factory`**. The note attached to a commit holds every envelope that applies to that commit. A note MUST be attached only to a commit whose tree equals the `gitTree` of each `factory-run` statement it contains. Merge statements written by a gate ([extensions/merge-gate.md](extensions/merge-gate.md)) are other predicate types: verifiers that don't implement that extension report them as `PREDICATE_UNKNOWN` and ignore them for L1 and L2.
 
 Producers SHOULD configure, once per clone:
 
@@ -159,6 +166,7 @@ A note is one UTF-8 JSON object. Schema: [`schemas/note.schema.json`](schemas/no
 
 - `attestations[].digest` MUST equal the statement digest of its envelope.
 - Writers MUST read the existing note, append new attestations, de-duplicate by `digest`, and write the result. They MUST NOT drop attestations they did not create.
+- When an entry with the same `digest` already exists, writers MUST add to its envelope any signatures not already present, so signing an existing statement raises it to L2.
 - `summary` is OPTIONAL and untrusted: a convenience for humans and dashboards.
 
 ### 7.3 Single writer on shared branches
@@ -174,7 +182,7 @@ Only the gate (§8) SHOULD push `refs/notes/factory` to a shared remote. Local p
 | **L2** | Signed | L1, and that envelope has at least one signature valid for a trusted signer |
 | **L3** | Gated | L2, and a statement from a trusted gate binds the merged commit (see [extensions/merge-gate.md](extensions/merge-gate.md)) |
 
-Levels are reported per commit. A repository's level for a range is the lowest level of its commits.
+Levels are reported per commit. A repository's level for a range is the lowest level of its commits. L1 does not require L0 (trailers are optional). Problems are reported alongside the level and do not change it; a verifier fails a commit that has problems or is below the required level.
 
 ## 9. Verification procedure
 
@@ -187,6 +195,8 @@ Given a commit `C` with tree `T`:
    2. Decode the statement and validate it. `predicateType` MUST be recognized; other predicate types are reported and skipped.
    3. `subject[0].digest.gitTree` MUST equal `T`. If `gitCommit` is present, it MUST equal `C`.
    4. Recompute the verdict (§4.3).
+
+   Each attestation reports at most one problem: the first failing check in this order (base64 decode, digest, payload type and JSON, predicate type, statement schema, tree, commit, verdict).
 4. `C` is L1 if at least one attestation passes step 3 with verdict `pass`.
 5. If trusted signers are configured, check signatures (§5.3). `C` is L2 if a passing attestation carries a valid trusted signature.
 6. If `C` has a `Factory-Attestation` trailer, its value MUST equal the digest of an attestation in the note. Otherwise it's a problem.
