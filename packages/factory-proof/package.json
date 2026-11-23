@@ -1,0 +1,48 @@
+{
+  "name": "@osfactory/factory-proof",
+  "version": "0.1.0",
+  "description": "Reference implementation of Factory Commits v0.1: a small library and the `git factory` command.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/os-factory/factory-commits.git",
+    "directory": "packages/factory-proof"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "git-factory": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "CLI.md",
+    "README.md"
+  ],
+  "scripts": {
+    "schemas": "node scripts/copy-schemas.mjs",
+    "build": "npm run schemas && tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
+    "typecheck": "npm run schemas && tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && vitest run",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
