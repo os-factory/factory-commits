@@ -22,6 +22,6 @@
     "producer": { "name": "har", "version": "2.0.0" },
     "agent": { "name": "claude-code", "version": "2.1" },
     "environment": { "trust": "self-reported", "executor": "local" },
-    "telemetry": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
+    "telemetry": { "traceId": "08a4c2fcb06d20d6c9f76d79addde080" }
   }
 }

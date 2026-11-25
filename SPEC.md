@@ -35,7 +35,7 @@ Trailers are standard [git trailers](https://git-scm.com/docs/git-interpret-trai
 | Trailer | Grammar | Example |
 |---|---|---|
 | `Work-Unit` | `[<source>:]<id>` | `Work-Unit: github:416` |
-| `Factory-Run` | `<run-id>[; trace=<32 lowercase hex>]` | `Factory-Run: 01JD4X7Q; trace=4bf92f3577b34da6a3ce929d0e0e4736` |
+| `Factory-Run` | `<run-id>[; trace=<32 lowercase hex>]` | `Factory-Run: 01JD4X7Q; trace=08a4c2fcb06d20d6c9f76d79addde080` |
 | `Factory-Policy` | `<policy-id>[@<version>]` | `Factory-Policy: default@3` |
 | `Factory-Agent` | `<name>[/<version>][; model=<model>]` | `Factory-Agent: claude-code/2.1; model=claude-opus-5-5` |
 | `Factory-Attestation` | `sha256:<64 lowercase hex>` | `Factory-Attestation: sha256:9f2c…` |
@@ -44,6 +44,7 @@ Trailers are standard [git trailers](https://git-scm.com/docs/git-interpret-trai
 - `<id>`, `<run-id>`, `<policy-id>`, `<name>` and `<model>` contain no whitespace and no `;`.
 - `Factory-Attestation` is the statement digest (§5.2) of a statement whose subject tree equals the commit's tree.
 - A commit MAY carry several `Work-Unit` trailers. It SHOULD carry at most one of each other trailer.
+- In `Factory-Run`, `trace=` is the trace id of the verification run, never of an agent session. When the statement carries `telemetry.traceId`, the two MUST be equal ([telemetry profile](profiles/telemetry.md#trailer-and-predicate)).
 - Trailer names are matched case-insensitively, as git does. Values are parsed strictly as written above (`; trace=` with one space).
 - In `Factory-Agent`, `<name>` ends at the first `/`. In `Factory-Policy`, `<policy-id>` ends at the first `@`. In `Work-Unit`, the `<id>` after the source MAY contain `:`.
 
@@ -94,7 +95,7 @@ Schema: [`schemas/factory-run.predicate.schema.json`](schemas/factory-run.predic
 | `agent.name`, `agent.version`, `agent.model` | MAY | The coding agent that made the change |
 | `environment.trust` | MUST | `self-reported` (the agent that made the change could have altered the run or the statement, e.g. on a developer machine) or `independent` (the run and its signing key are out of that agent's reach). Producers MUST write `self-reported` unless both conditions hold. The field is written by the producer, so it is a claim, not evidence (§11.1) |
 | `environment.executor` | MAY | e.g. `local`, `github-actions` |
-| `telemetry.traceId`, `telemetry.spanId` | MAY | OTel ids of the run span ([telemetry profile](profiles/telemetry.md)) |
+| `telemetry.traceId`, `telemetry.spanId` | MAY | OTel ids of the verification run span. The trace id SHOULD be derived from `run.id` when the producer starts the trace ([telemetry profile](profiles/telemetry.md#trace-id-derivation)) |
 
 Unknown fields MUST be ignored by verifiers. Producers MAY add fields under `extensions.<reverse-dns or URL>`.
 
@@ -243,4 +244,4 @@ A team that wants that judgment can add a stage for it, such as a `review` stage
 
 ## Appendix: telemetry
 
-How OpenTelemetry data correlates with proofs is defined in the [telemetry profile](profiles/telemetry.md). A verifier never needs telemetry.
+How OpenTelemetry data correlates with proofs is defined in the [telemetry profile](profiles/telemetry.md), including how agent telemetry links to a factory run through `workUnit.attemptId` and the run window. A verifier never needs telemetry.
