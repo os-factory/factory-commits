@@ -9,3 +9,4 @@
 - Process: RFC pull requests stay open at least 24 hours (was 7 days). New compatibility rules in RFCS.md.
 - Design rule 3 and §8: a signature proves integrity and accountability, not that the stages ran.
 - New §11 Limitations: self-reported proofs, untested merged trees, test quality, each with optional mitigations.
+- Telemetry profile: linking strategy from OpenTelemetry to a factory run (verification trace by trace id, verification spans by `factory.run.id`, agent telemetry by `factory.attempt.id` and the run window), a standard trace id derived from the run id, and how to attach work identity to an agent session that started before the attempt was bound. `trace=` in `Factory-Run` names the verification trace and equals `telemetry.traceId` when both are present.
